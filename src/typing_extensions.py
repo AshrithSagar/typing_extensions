@@ -4316,3 +4316,31 @@ globals().update(
 Generic = typing.Generic
 ForwardRef = typing.ForwardRef
 Annotated = typing.Annotated
+
+
+# Proposed additions — see https://github.com/AshrithSagar/pyHKTs
+__all__.extend(["ParametricSelf"])
+
+_Ts = TypeVarTuple("_Ts")
+
+class ParametricSelf(Generic[Unpack[_Ts]]):
+    """
+    Stand-in for ``Self[*_Ts]``.
+    - In return position: resolves to the concrete receiver type reparametrised with *_Ts.
+    - At runtime: never instantiated, carries *_Ts as a type arg only.
+
+    Usage::
+
+        class Functor(Protocol[A_co]):
+            def map(self, fn: Callable[[A_co], B]) -> ParametricSelf[B]: ...
+
+        class Box(Functor[int]):
+            def map(self, fn: Callable[[int], B]) -> ParametricSelf[B]:
+                return Box(fn(self.value))
+
+        b = Box(42)  # Box[int]
+        result = b.map(str)
+        reveal_type(result)  # Box[str]
+    """
+
+    pass
