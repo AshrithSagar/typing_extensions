@@ -4319,7 +4319,7 @@ Annotated = typing.Annotated
 
 
 # Proposed additions — see https://github.com/AshrithSagar/pyHKTs
-__all__.extend(["ParametricSelf"])
+__all__.extend(["ParametricSelf", "KindVar"])
 
 _Ts = TypeVarTuple("_Ts")
 
@@ -4344,3 +4344,102 @@ class ParametricSelf(Generic[Unpack[_Ts]]):
     """
 
     pass
+
+
+class KindVar:
+    """
+    Type variable ranging over type constructors (kind * -> *).
+    
+    KindVar("F") means F could be list, tuple, set, Optional, ...
+    NOT list[int] — that's TypeVar territory.
+    
+    F[A] in an annotation is valid when F is a KindVar.
+    
+    Usage::
+    
+        F = KindVar("F")
+        A = TypeVar("A")
+        B = TypeVar("B")
+        
+        def fmap(fn: Callable[[A], B], fa: F[A]) -> F[B]: ...
+        
+        fmap(str, [1, 2, 3])   # list[str]
+        fmap(str, (1, 2, 3))   # tuple[str, ...]
+    """
+
+    def __init__(
+        self,
+        name: str,
+        *constraints: type,
+        bound: Any = None,
+        kind: int = 1,
+        default: Any = NoDefault,
+    ) -> None:
+        if constraints and bound is not None:
+            raise TypeError(
+                "KindVar cannot have both constraints and a bound"
+            )
+        if len(constraints) == 1:
+            raise TypeError(
+                "KindVar requires at least two constraints"
+            )
+        if kind < 1:  # [FIXME]: kind=0 corresponds to a TypeVar? Can see whether to allow it, later?
+            raise TypeError(f"KindVar kind must be >= 1, got {kind!r}")
+
+        self.__name__: str = name
+        self.__kind__: int = kind
+        self.__constraints__: tuple[type, ...] = constraints
+        self.__bound__ = bound
+        self.__default__ = default
+        self.__covariant__ = False
+        self.__contravariant__ = False
+
+    def __getitem__(self, args: Any) -> "_KindApplication":
+        """F[A] — valid in annotations when F is a KindVar."""
+        if not isinstance(args, tuple):
+            args = (args,)
+        if len(args) != self.__kind__:
+            raise TypeError(
+                f"KindVar '{self.__name__}' has kind {self.__kind__} "
+                f"but got {len(args)} argument(s)"
+            )
+        return _KindApplication(self, args)
+
+    def __repr__(self) -> str:
+        return f"~{self.__name__}"
+
+    def __or__(self, other: Any) -> Any:
+        return typing.Union[self, other]
+
+    def __ror__(self, other: Any) -> Any:
+        return typing.Union[other, self]
+
+    def __reduce__(self) -> str:
+        return self.__name__
+
+
+class _KindApplication:
+    """
+    Runtime representation of F[A] where F is a KindVar.
+    
+    Produced by KindVar.__getitem__. Recognised by checkers as
+    a higher-kinded type application — not a subscript error.
+    
+    Structurally equivalent to GenericAlias(F, (A,)) but for
+    KindVar constructors rather than concrete classes.
+    """
+    __slots__ = ("__constructor__", "__args__")
+
+    def __init__(self, constructor: KindVar, args: tuple) -> None:
+        self.__constructor__ = constructor
+        self.__args__ = args
+
+    def __repr__(self) -> str:
+        args_str = ", ".join(
+            a.__name__ if isinstance(a, type) else repr(a)
+            for a in self.__args__
+        )
+        return f"{self.__constructor__.__name__}[{args_str}]"
+
+    def __class_getitem__(cls, item: Any) -> Any:
+        return cls
