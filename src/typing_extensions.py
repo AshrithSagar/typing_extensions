@@ -4372,7 +4372,7 @@ class KindVar:
         name: str,
         *constraints: type,
         bound: Any = None,
-        kind: int = 1,
+        arity: int = 1, # [FIXME]: We'd want to default to 0, to denote a TypeVar, but currently we'll fix it to 1 FTTB
         default: Any = NoDefault,
     ) -> None:
         if constraints and bound is not None:
@@ -4383,11 +4383,11 @@ class KindVar:
             raise TypeError(
                 "KindVar requires at least two constraints"
             )
-        if kind < 1:  # [FIXME]: kind=0 corresponds to a TypeVar? Can see whether to allow it, later?
-            raise TypeError(f"KindVar kind must be >= 1, got {kind!r}")
+        if arity < 1:  # [FIXME]: arity=0 corresponds to a TypeVar? Can see whether to allow it, later?
+            raise TypeError(f"KindVar arity must be >= 1, got {arity!r}")
 
         self.__name__: str = name
-        self.__kind__: int = kind
+        self.__arity__: int = arity
         self.__constraints__: tuple[type, ...] = constraints
         self.__bound__ = bound
         self.__default__ = default
@@ -4395,12 +4395,12 @@ class KindVar:
         self.__contravariant__ = False
 
     def __getitem__(self, args: Any) -> "_KindApplication":
-        """F[A] — valid in annotations when F is a KindVar."""
+        """F[...] — valid in annotations when F is a KindVar."""
         if not isinstance(args, tuple):
             args = (args,)
-        if len(args) != self.__kind__:
+        if len(args) != self.__arity__:
             raise TypeError(
-                f"KindVar '{self.__name__}' has kind {self.__kind__} "
+                f"KindVar '{self.__name__}' has arity {self.__arity__} "
                 f"but got {len(args)} argument(s)"
             )
         return _KindApplication(self, args)
@@ -4430,9 +4430,9 @@ class _KindApplication:
     """
     __slots__ = ("__constructor__", "__args__")
 
-    def __init__(self, constructor: KindVar, args: tuple) -> None:
-        self.__constructor__ = constructor
-        self.__args__ = args
+    def __init__(self, constructor: KindVar, args: tuple[Any, ...]) -> None:
+        self.__constructor__:KindVar = constructor
+        self.__args__:tuple[Any, ...] = args
 
     def __repr__(self) -> str:
         args_str = ", ".join(
